@@ -142,6 +142,15 @@ Dockerfile.prod               ← pinned image
 - Has anyone routed full-bandwidth P2P between two B70 under a single PCIe switch?
 - Does xe expose a `p2pdma` sysfs node on any BMG kernel yet? (None here, even on the ACS-off boot — a hint the driver hasn't registered as a P2PDMA provider.)
 
+## License
+
+This repo is mixed-license:
+
+- **Original work** (this README and `docs/`, `scripts/`, `repro/b70_p2p_copy_probe.cpp`, `Dockerfile.prod`, tests) — **MIT**, see [`LICENSE`](LICENSE).
+- **`fusion_patch/` and `patches/`** — **vLLM source, Apache-2.0**, modified here for B70 (original SPDX/copyright headers retained, changes marked in-file). They remain Apache-2.0.
+
+Full breakdown in [`NOTICE`](NOTICE). The MIT grant does not relicense the Apache-2.0 files.
+
 ---
 
 *Built and measured on 2× Arc Pro B70, Ubuntu 26.04 / kernel 7.0.0-22 / xe. If you're chasing multi-GPU on Battlemage — it works, three ways; open an issue or discussion and I'll help.*
