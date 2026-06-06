@@ -1,0 +1,36 @@
+This repository combines original work with third-party components under
+different licenses. The scope is:
+
+== Original work — MIT (see LICENSE) ==
+Everything authored here: README and docs, the launch scripts in scripts/,
+the reproducer repro/b70_p2p_copy_probe.cpp, Dockerfile.prod, and the prose.
+Copyright (c) 2026 tsumugi-xe.
+
+== Derived from vLLM — Apache License 2.0 ==
+vLLM (https://github.com/vllm-project/vllm) is licensed under Apache-2.0.
+The following are vLLM source, modified for Intel Arc B70 (BMG) host-staged
+TP=2, and REMAIN under Apache-2.0 (their original SPDX/copyright headers are
+retained, and the changes are marked in-file with "[B70 TP=2 fusion]" and a
+top-of-file modification notice):
+
+- fusion_patch/parallel_state.py
+- fusion_patch/xpu_communicator.py
+- fusion_patch/xpu_worker.py
+- fusion_patch/base_device_communicator.py
+  (full vLLM source files with modifications; see fusion_patch/README.md)
+
+- patches/mamba_utils-pr41995.patch  — upstream vLLM PR #41995 (unmodified cherry-pick)
+- patches/moe_wna16-xpu-capability-gate.patch
+- patches/awq-xpu-force-wna16.patch
+  (diffs against vLLM source files)
+
+parallel_state.py additionally carries vLLM's own upstream attribution
+(adapted from NVIDIA/Megatron-LM), which is retained.
+
+== Other ==
+Qwen model weights (e.g. Qwen3.6, Qwen2.5) are subject to their own licenses
+(QuantTrio / Qwen / Alibaba). llama.cpp behavior is described, not redistributed;
+llama.cpp is MIT-licensed by its authors.
+
+The MIT grant in LICENSE applies ONLY to the original work above. It does not
+relicense the Apache-2.0 vLLM files, which stay under Apache-2.0.

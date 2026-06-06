@@ -1,0 +1,22 @@
+--- a/vllm/v1/worker/mamba_utils.py
++++ b/vllm/v1/worker/mamba_utils.py
+@@ -5,6 +5,7 @@
+ from collections.abc import Callable
+ from typing import Any
+
++import numpy as np
+ import torch
+
+ from vllm.config import CacheConfig
+@@ -108,8 +109,10 @@
+     if src_block_idx == dest_block_idx and accept_token_bias == 0:
+         return
+
+-    src_ptrs_np = copy_bufs.src_ptrs.np
+-    dst_ptrs_np = copy_bufs.dst_ptrs.np
++    # PR #41995: device pointers can use the high bit on XPU; store by uint64
++    # bit pattern instead of signed int64 (which rejects values >= 2**63).
++    src_ptrs_np = copy_bufs.src_ptrs.np.view(np.uint64)
++    dst_ptrs_np = copy_bufs.dst_ptrs.np.view(np.uint64)
+     sizes_np = copy_bufs.sizes.np
+     offset = copy_bufs.offset

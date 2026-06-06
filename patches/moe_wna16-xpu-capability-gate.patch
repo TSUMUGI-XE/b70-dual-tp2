@@ -1,0 +1,20 @@
+--- a/vllm/model_executor/layers/quantization/moe_wna16.py
++++ b/vllm/model_executor/layers/quantization/moe_wna16.py
+@@ -66,7 +66,7 @@
+         elif self.linear_quant_method in ("awq", "awq_marlin"):
+             capability_tuple = current_platform.get_device_capability()
+             device_capability = (
+-                -1 if capability_tuple is None else capability_tuple.to_int()
++                999 if capability_tuple is None else capability_tuple.to_int()  # XPU patch: capability=None -> assume AWQ-capable (the gate is CUDA SM semantics, N/A on XPU)
+             )
+             awq_min_capability = AWQConfig.get_min_capability()
+             if device_capability < awq_min_capability:
+@@ -146,7 +146,7 @@
+
+         capability_tuple = current_platform.get_device_capability()
+         device_capability = (
+-            -1 if capability_tuple is None else capability_tuple.to_int()
++            999 if capability_tuple is None else capability_tuple.to_int()  # XPU patch: capability=None -> assume AWQ-capable (the gate is CUDA SM semantics, N/A on XPU)
+         )
+         # Avoid circular import
+         from vllm.model_executor.layers.quantization.awq import AWQConfig

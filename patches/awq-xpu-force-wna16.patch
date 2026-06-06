@@ -1,0 +1,19 @@
+--- a/vllm/model_executor/layers/quantization/awq.py
++++ b/vllm/model_executor/layers/quantization/awq.py
+@@ -111,8 +111,15 @@
+             from .awq_marlin import AWQMarlinConfig
+             from .moe_wna16 import MoeWNA16Config
+             from .utils.marlin_utils import check_moe_marlin_supports_layer
++            from vllm.platforms import current_platform
+
+-            if not check_moe_marlin_supports_layer(layer, self.group_size):
++            # XPU patch: Marlin is a CUDA-only kernel. On XPU get_device_capability()
++            # returns None, so device_capability=-1 makes verify_marlin_supported raise.
++            # -> on XPU, always take the Moe WNA16 (triton) path.
++            if (
++                current_platform.get_device_capability() is None
++                or not check_moe_marlin_supports_layer(layer, self.group_size)
++            ):
+                 logger.warning_once(
+                     f"Layer '{prefix}' is not supported by AWQMoeMarlin. "
+                     "Falling back to Moe WNA16 kernels."

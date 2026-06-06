@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+vllm/
+backup/
+*.gguf
+models/
+
+# compiled reproducer — ship the .cpp only, users rebuild with the documented icpx line
+repro/b70_p2p_copy_probe

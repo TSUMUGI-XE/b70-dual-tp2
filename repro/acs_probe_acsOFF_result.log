@@ -1,0 +1,35 @@
+==================== ACS PROBE RUN: acsOFF ====================
+--- kernel cmdline acs flag ---
+  >>> acs_override ABSENT (good — this is the control boot)
+--- IOMMU groups (if merged into one group => ACS truly dropped) ---
+  03:00.0 -> group 19
+  07:00.0 -> group 24
+--- p2pdma sysfs provider node (present => xe registered P2PDMA) ---
+  03:00.0: no p2pdma node
+  07:00.0: no p2pdma node
+--- PROBE ---
+Discrete Level-Zero GPUs: 2
+  dev[0] = Intel(R) Arc(TM) Pro B70 Graphics
+  dev[1] = Intel(R) Arc(TM) Pro B70 Graphics
+--- TEST 1: L0 direct copy dev0 -> dev1 ---
+  zeCommandListCreateImmediate  -> 0x0
+  zeCommandListAppendMemoryCopy -> 0x70000003 (FAILED)
+--- TEST 2: host-staged copy dev0 -> host -> dev1 ---
+  checksum: PASS
+
+RESULT: l0_p2p=BROKEN(ze-error)  host_staged=WORKS
+==============================================================
+VERDICT:
+  PASS (l0_p2p WORKS) => peer P2P opened with ACS off => it was the override, NOT an xe bug.
+                         => DO NOT file the disclosure ask. Celebrate: native P2P is reachable.
+  FAIL (0x70000003)   => peer P2P still dead with ACS cleared => clean repro.
+                         => disclosure ask is now bulletproof; attach this log + baseline.
+
+=== 🔑 DECISIVE dmesg line (xe driver's own P2P refusal, acs_override REMOVED boot) ===
+[18.887] xe 0000:07:00.0: cannot be used for peer-to-peer DMA as the client and provider (0000:03:00.0) do not share an upstream bridge or whitelisted host bridge
+--- context ---
+- acs_override ABSENT (no-ACS boot), yet IOMMU groups STILL separate 19/24 (not merged)
+- probe: l0_p2p=BROKEN (0x70000003), host_staged=WORKS  => SAME as acs-ON baseline
+- no p2pdma sysfs node on either GPU (xe not registered as P2PDMA provider)
+- VERDICT: acs_override was NOT the cause. Genuine gap. Kernel names it: no shared
+  upstream bridge / host bridge not on the P2PDMA whitelist (cross-root-port topology).

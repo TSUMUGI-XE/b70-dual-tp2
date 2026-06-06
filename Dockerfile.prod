@@ -1,0 +1,17 @@
+# Production pin for the 27B tier: bake PR #41995 + the XPU mem_get_info shim into the
+# PoC image, so the runtime needs no mounted patch files.
+# Build the base image first (vllm-xpu-poc:0.21) from the official Dockerfile.xpu, tag v0.21.0:
+#   git clone --depth 1 --branch v0.21.0 https://github.com/vllm-project/vllm && cd vllm
+#   docker build -f docker/Dockerfile.xpu --target vllm-base -t vllm-xpu-poc:0.21 .
+# Then: docker build -f Dockerfile.prod -t vllm-xpu-27b:prod .   (context = this dir)
+FROM vllm-xpu-poc:0.21
+ARG SP=/opt/venv/lib/python3.12/site-packages
+
+# (1) PR #41995: view mamba copy-metadata device pointers as uint64 -> enables APC on XPU.
+#     (If your base vLLM already includes #41995, drop this.)
+COPY patches/mamba_utils-pr41995.patch /tmp/
+RUN patch -p1 -d "$SP" < /tmp/mamba_utils-pr41995.patch
+
+# (2) torch.xpu.mem_get_info shim (B70 lacks the free-memory query), auto-imported by every interpreter.
+COPY sitecustomize.py /opt/patch/sitecustomize.py
+ENV PYTHONPATH=/opt/patch

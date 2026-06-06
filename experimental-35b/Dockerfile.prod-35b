@@ -1,0 +1,11 @@
+# [SHELVED / does not serve in prod] Image to attempt 35B-A3B (MoE) AWQ on vLLM-XPU.
+# Base already has PR #41995 + the mem_get_info shim. Adds two XPU MoE-AWQ patches:
+#   - moe_wna16: relax the capability gate (XPU get_device_capability()=None -> treat as AWQ-capable)
+#   - awq: in the FusedMoE branch, skip CUDA-only Marlin and always take the MoeWNA16 (triton) path
+# NOTE: experimental — triton wNa16 MoE on XPU is UNVERIFIED. See ./README.md and ../README.md.
+# build (context = repo root): docker build -f experimental-35b/Dockerfile.prod-35b -t vllm-xpu-35b:prod .
+FROM vllm-xpu-27b:prod
+ARG SP=/opt/venv/lib/python3.12/site-packages
+COPY patches/moe_wna16-xpu-capability-gate.patch patches/awq-xpu-force-wna16.patch /tmp/
+RUN patch -p1 -d "$SP" < /tmp/moe_wna16-xpu-capability-gate.patch \
+ && patch -p1 -d "$SP" < /tmp/awq-xpu-force-wna16.patch
