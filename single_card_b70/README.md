@@ -11,7 +11,7 @@ Model throughout: **Qwen3.6-35B-A3B**, a small-active MoE (~3B active params/tok
 | Rung | Question you're asking | Winner | Headline number (one B70 unless noted) |
 |---|---|---|---|
 | **1 — single stream** | "one user, lowest latency" | **llama.cpp** (SYCL build) | **44 → 72.6 tok/s** rebuilding OpenCL→SYCL; **123 tok/s** with the vLLM+MTP squeeze |
-| **2 — single-card concurrency** | "many users / a batch, on one card" | **vLLM** (continuous batching) | **~800 tok/s aggregate @ N=64**, scales ~linearly |
+| **2 — single-card concurrency** | "many users / a batch, on one card" | **vLLM** (continuous batching) | **~1076 tok/s aggregate @ N=64** (~22x single-stream, sub-linear) |
 | **3 — both cards** | "model too big for 32 GB, or pool capacity" | **vLLM host-staged TP=2** | **runs today** (capacity, not speed); native P2P = open frontier |
 
 **The single most important line in this whole document is rung 1's first half: a 1.6x decode speedup from nothing but rebuilding llama.cpp against the SYCL backend instead of OpenCL.** If you do one thing, do that.
@@ -83,15 +83,18 @@ PIECEWISE + MTP(n=3) + prefix cache : 123.5 tok/s  (1.71x)
 
 The moment you have *more than one request in flight*, the metric changes from latency to **aggregate throughput**, and the winner flips from llama.cpp to **vLLM with continuous batching.**
 
-llama.cpp serves one stream at a time well, but doesn't multiplex — a second request waits. vLLM batches concurrent requests into each forward pass, so aggregate throughput climbs ~linearly with concurrency until the card saturates. On one B70, 35B-A3B (cudagraph, **MTP off**):
+llama.cpp serves one stream at a time well, but doesn't multiplex — a second request waits. vLLM batches concurrent requests into each forward pass, so aggregate throughput climbs steeply with concurrency until the card saturates. On one B70, 35B-A3B (cudagraph, **MTP off**), distinct prompts, aggregate end-to-end throughput (one sweep):
 
 ```
-N=8   : ~85 tok/s aggregate
-N=16  : ~80–160 tok/s aggregate (scaling)
-N=64  : ~800 tok/s aggregate
+ N      aggregate   per-stream
+ 1  :     49 tok/s     49
+ 8  :    307 tok/s     44
+16  :    484 tok/s     37
+32  :    756 tok/s     28
+64  :   1076 tok/s     20
 ```
 
-That ~**800 tok/s at N=64 on a single 32 GB card** is the rung-2 headline — about 11x the single-stream rate, because the overhead-bound idle time that hurts batch-of-one is exactly what concurrency fills. This is the "shared endpoint / eval sweep / offline batch" rung. Turn MTP **off** here: speculative decode buys single-stream latency at the cost of concurrent capacity, so on this rung it's a net loss.
+Aggregate climbs from ~49 to ~**1076 tok/s at N=64 on a single 32 GB card** — about **22x** the single-stream rate, and it hasn't plateaued yet at N=64. It's **sub-linear, not perfectly linear**: per-stream rate degrades gracefully (49 → 20 tok/s) as the card fills, so 64x the concurrency buys ~22x the aggregate, not 64x. The mechanism is the overhead-bound idle time that hurts batch-of-one — concurrency fills it. This is the "shared endpoint / eval sweep / offline batch" rung. (Note: the N=1 figure here is *end-to-end* throughput including prefill on a short generation, so it reads lower than rung 1's **steady-state decode** rate of 72.6 — different metric; on this rung what matters is the aggregate.) Turn MTP **off** here: speculative decode buys single-stream latency at the cost of concurrent capacity (it drops the concurrency cap ~26→7), so on this rung it's a net loss.
 
 So the rung-1-vs-rung-2 decision is not "which is faster" but "which axis is my workload on":
 
@@ -107,7 +110,7 @@ So the rung-1-vs-rung-2 decision is not "which is faster" but "which axis is my 
 
 If the model doesn't fit in 32 GB, or you want to pool both cards' capacity, you need tensor parallelism across the two B70 — `vllm serve -tp 2`. This is where the internet says "dual-B70 is broken." The honest state:
 
-- **`vllm serve -tp 2` hangs** out of the box — the cross-GPU collective tries a direct GPU↔GPU peer copy, which a consumer root complex refuses (`0x70000003`, a clean error, not silent corruption).
+- **`vllm serve -tp 2` hangs** out of the box — the cross-GPU collective stalls at its handshake. Underneath, a direct GPU↔GPU peer copy across this consumer root complex is refused outright (a clean failure — `0x70000003` from a raw probe, or an all-`0xFF` buffer when forced — *not* silent corruption).
 - **It runs today via host-staged collectives** — route the all-reduce through host RAM (gloo, or oneCCL's host path) instead of peer copy. A model that fits on *no* single 32 GB card then loads and serves across the pair. This is the **capacity unlock**, and it's reproducible.
 - **It is *not* a single-stream speed win.** Host-staged TP=2 single-stream is *slower* than one card alone (the extra host round-trip), e.g. 35B-A3B ~7.5 tok/s TP=2 vs ~11 tok/s on one card. Use rung 3 for **capacity / pooling**, never to make one request faster. For latency, stay on rung 1.
 
@@ -128,9 +131,9 @@ If you have one card, you never touch any of this. Start at rung 1.
 Single-stream decode on this card is **overhead/dispatch bound, not bandwidth bound** (32% smaller weights bought only 6.6% more tokens). So:
 
 - **Rung 1 (latency):** kill per-launch overhead. SYCL > OpenCL backend (1.6x); cudagraph replays many launches as one (4.4x over eager); MTP emits multiple tokens per pass — the only lever past the "cheaper forward" ceiling (+71%).
-- **Rung 2 (throughput):** that same idle-while-waiting time is *free capacity* — continuous batching fills it, so aggregate scales ~linearly to ~800 tok/s @ N=64. (MTP off: it trades this capacity for single-stream latency.)
+- **Rung 2 (throughput):** that same idle-while-waiting time is *free capacity* — continuous batching fills it, so aggregate climbs to ~1076 tok/s @ N=64 (~22x single-stream, sub-linear and still rising). (MTP off: it trades this capacity for single-stream latency.)
 - **Rung 3 (capacity):** two cards add VRAM, not single-stream speed — the host-staged path even costs a little latency. It's for models that don't fit, not requests that are slow.
 
 ---
 
-*Measured on Arc Pro B70 (32 GB), `xe` driver, recent Linux kernel. Single-stream numbers are batch-of-one; n-sweep figures are single-shot, ±~10% noisy. Rung-2 aggregates are continuous-batching, MTP off. Rung-3 TP=2 is host-staged (capacity, not speed); native P2P is unverified pending a PCIe switch. Host is a consumer platform (single root complex, PCIe Gen4 x8 to each card) — single-card decode is overhead bound so the host link isn't the rung-1/2 limiter. Corrections welcome.*
+*Measured on Arc Pro B70 (32 GB), `xe` driver, recent Linux kernel. Single-stream numbers are batch-of-one; n-sweep figures are single-shot, ±~10% noisy. Rung-2 aggregates are continuous-batching, MTP off, distinct prompts, end-to-end (one sweep). Rung-3 TP=2 is host-staged (capacity, not speed); native P2P is unverified pending a PCIe switch. Host is a consumer platform (single root complex, PCIe Gen4 x8 to each card) — single-card decode is overhead bound so the host link isn't the rung-1/2 limiter. Corrections welcome.*
