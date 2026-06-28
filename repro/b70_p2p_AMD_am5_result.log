@@ -1,0 +1,48 @@
+# B70 P2P peer-copy probe — AMD AM5 host (issue #1 request)
+# Date: 2026-06-28T06:21:44Z
+
+## Host
+CPU      : AMD Ryzen 9 9950X 16-Core Processor  (CPU family 26 = 0x1a, >= 0x17 -> kernel trusts AMD for p2pdma)
+Board    : AM5 / Granite Ridge root complex
+Kernel   : 7.1.2
+OS       : Ubuntu 26.04 LTS
+
+## GPU stack
+GPUs     : 2x Intel Arc Pro B70 (Battlemage G31)
+compute-runtime (UMD libze-intel-gpu1): 26.22.38646.4-0
+L0 loader: libze_loader.so.1.31.0   |   IGC: 2.36.3   gmmlib: 22.10.0
+oneAPI   : 2026.0 (icpx, build only)
+
+## PCIe topology (the two B70 are on SEPARATE root ports — no shared switch; they meet at the AMD root complex)
+  -[0000:00]-+-00.0  Advanced Micro Devices, Inc. [AMD] Raphael/Granite Ridge Root Complex
+             +-01.1-[01-04]----00.0-[02-04]--+-01.0-[03]----00.0  Intel Corporation Battlemage G31 [Intel Graphics]
+             +-01.3-[06-09]----00.0-[07-09]--+-01.0-[08]----00.0  Intel Corporation Battlemage G31 [Intel Graphics]
+  -> B70#0 = 03:00.0 behind root port 00:01.1 ; B70#1 = 08:00.0 behind root port 00:01.3
+
+## Probe 1: stock b70_p2p_copy_probe (dev0->dev1 + host-staged control)
+  Discrete Level-Zero GPUs: 2
+    dev[0] = Intel(R) Arc(TM) Pro B70 Graphics
+    dev[1] = Intel(R) Arc(TM) Pro B70 Graphics
+  --- TEST 1: L0 direct copy dev0 -> dev1 ---
+    zeCommandListCreateImmediate  -> 0x0
+    zeCommandListAppendMemoryCopy -> 0x0 (copy done)
+    checksum: PASS
+  --- TEST 2: host-staged copy dev0 -> host -> dev1 ---
+    checksum: PASS
+  
+  RESULT: l0_p2p=WORKS  host_staged=WORKS
+
+## Probe 2: b70_p2p_canaccess_probe (issue's two explicit checks, both directions)
+  Discrete Level-Zero GPUs: 2
+  --- CHECK 1: zeDeviceCanAccessPeer ---
+    dev0->dev1 : ret=0x0  canAccess=1
+    dev1->dev0 : ret=0x0  canAccess=1
+  --- CHECK 2: direct L0 peer copy + verify ---
+    dev0->dev1: zeCommandListAppendMemoryCopy=SUCCESS  checksum=PASS (0/4194304 mismatched)
+    dev1->dev0: zeCommandListAppendMemoryCopy=SUCCESS  checksum=PASS (0/4194304 mismatched)
+  
+  RESULT: canAccessPeer=YES  copy_verify=PASS  =>  P2P_VERIFIED
+
+## Verdict
+  zeDeviceCanAccessPeer = 1 (both dirs) AND checksum PASS (0 mismatched, both dirs),
+  stable across repeated runs. The bytes actually land. -> AMD host verifies clean.
