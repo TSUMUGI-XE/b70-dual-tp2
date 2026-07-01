@@ -1,0 +1,16 @@
+# Measured 2-GPU all-reduce — 2x B70, AM5/Ryzen 9950X, 2026-06-28T06:57:43Z
+# PEER = direct bidirectional peer copy + on-GPU add ; HOST = same add, transport via PINNED host RAM (concurrent)
+# compute-runtime 26.22.38646.4-0, kernel 7.1.2
+
+=== Measured 2-GPU all-reduce: 2x B70 (AM5/Ryzen 9950X) ===
+msg      |    PEER us    HOST us    ratio | note
+4KB      |      20.24      18.85    0.93x | verified
+16KB     |      15.96      19.18    1.20x | verified
+64KB     |      17.23      22.81    1.32x | verified
+256KB    |      25.51      36.73    1.44x | verified
+1MB      |      59.22      92.60    1.56x | verified
+4MB      |     191.75     316.37    1.65x | verified
+16MB     |     730.04    1231.99    1.69x | verified
+64MB     |    2994.79    4953.46    1.65x | verified
+
+(per-collective floor ~= the small-message time; effective BW dominates by ~1MB.)
